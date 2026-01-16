@@ -6,7 +6,9 @@
     "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "resolveJsonModule": true
   },
-  "include": ["app/**/*.ts"]
+  "include": ["app/main/**/*.ts"],
+  "exclude": ["app/renderer", "node_modules"]
 }
