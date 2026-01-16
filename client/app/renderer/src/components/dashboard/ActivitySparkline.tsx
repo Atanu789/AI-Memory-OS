@@ -1,9 +1,10 @@
 import { Github, TrendingUp } from 'lucide-react';
+import { GlowingCard } from '../ui/glowing-card';
 
 export default function ActivitySparkline() {
   return (
-    <div className="bg-bg-secondary border border-border-default rounded-lg p-6">
-      <h3 className="text-sm font-medium text-text-secondary mb-4 flex items-center gap-2">
+    <GlowingCard className="p-6" glowColor="green">
+      <h3 className="text-sm font-medium text-slate-300 mb-4 flex items-center gap-2">
         <Github size={16} />
         GitHub Activity
       </h3>
@@ -25,11 +26,11 @@ export default function ActivitySparkline() {
           ))}
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-accent-green">
+        <div className="flex items-center gap-2 text-xs text-green-400">
           <TrendingUp size={12} />
           <span>+20% from last week</span>
         </div>
       </div>
-    </div>
+    </GlowingCard>
   );
 }

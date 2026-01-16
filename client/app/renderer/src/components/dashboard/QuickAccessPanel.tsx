@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Network, Clock, Github, ArrowRight } from 'lucide-react';
+import { GlowingCard } from '../ui/glowing-card';
 
 const quickLinks = [
   { to: '/mindmap', icon: Network, label: 'Mind Map', description: 'Visualize memory graph' },
@@ -9,8 +10,8 @@ const quickLinks = [
 
 export default function QuickAccessPanel() {
   return (
-    <div className="bg-bg-secondary border border-border-default rounded-lg p-6">
-      <h3 className="text-sm font-medium text-text-secondary mb-4">Quick Access</h3>
+    <GlowingCard className="p-6" glowColor="orange">
+      <h3 className="text-sm font-medium text-slate-300 mb-4">Quick Access</h3>
       
       <div className="space-y-2">
         {quickLinks.map((link) => (
@@ -26,10 +27,10 @@ export default function QuickAccessPanel() {
                 <div className="text-xs text-text-muted">{link.description}</div>
               </div>
             </div>
-            <ArrowRight size={16} className="text-text-muted group-hover:text-accent-blue transition-colors" />
+            <ArrowRight size={16} className="text-slate-500 group-hover:text-blue-400 transition-colors" />
           </Link>
         ))}
       </div>
-    </div>
+    </GlowingCard>
   );
 }

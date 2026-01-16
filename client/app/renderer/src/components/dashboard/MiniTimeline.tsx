@@ -1,4 +1,5 @@
 import { GitBranch } from 'lucide-react';
+import { GlowingCard } from '../ui/glowing-card';
 
 interface Props {
   contextSwitches: number;
@@ -6,8 +7,8 @@ interface Props {
 
 export default function MiniTimeline({ contextSwitches }: Props) {
   return (
-    <div className="bg-bg-secondary border border-border-default rounded-lg p-6">
-      <h3 className="text-sm font-medium text-text-secondary mb-4">Today's Timeline</h3>
+    <GlowingCard className="p-6" glowColor="purple">
+      <h3 className="text-sm font-medium text-slate-300 mb-4">Today's Timeline</h3>
       
       <div className="space-y-3">
         {/* Timeline entries */}
@@ -36,11 +37,11 @@ export default function MiniTimeline({ contextSwitches }: Props) {
         </div>
 
         {/* Context switches count */}
-        <div className="pt-3 mt-3 border-t border-border-default flex items-center gap-2 text-sm text-text-secondary">
+        <div className="pt-3 mt-3 border-t border-slate-700 flex items-center gap-2 text-sm text-slate-400">
           <GitBranch size={14} />
           <span>{contextSwitches} context switches today</span>
         </div>
       </div>
-    </div>
+    </GlowingCard>
   );
 }

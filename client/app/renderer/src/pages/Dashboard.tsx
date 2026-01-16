@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { DashboardSummary, Insight } from '../types/electron.d';
-import FocusSummaryCard from '../components/dashboard/FocusSummaryCard';
-import MiniTimeline from '../components/dashboard/MiniTimeline';
-import InsightCard from '../components/dashboard/InsightCard';
-import ActivitySparkline from '../components/dashboard/ActivitySparkline';
-import QuickAccessPanel from '../components/dashboard/QuickAccessPanel';
+import { Highlight } from '../components/ui/hero-highlight';
+import { AppBackground } from '../components/ui/app-background';
+import { motion } from 'framer-motion';
+import { 
+  Activity, 
+  Brain,
+  ArrowRight
+} from 'lucide-react';
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -67,46 +70,126 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-text-secondary">Loading...</div>
+      <div className="relative min-h-full overflow-hidden">
+        <AppBackground />
+        <div className="relative z-10 flex items-center justify-center h-full">
+          <motion.div 
+            animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            className="text-slate-400 flex items-center gap-2"
+          >
+            <Brain className="w-5 h-5 animate-pulse" />
+            Loading...
+          </motion.div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Top Bar with Time Selector */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <div className="flex items-center gap-2">
-          <select className="px-3 py-1.5 bg-bg-elevated border border-border-default rounded text-sm">
-            <option>Today</option>
-            <option>This Week</option>
-            <option>This Month</option>
-          </select>
-        </div>
-      </div>
+    <div className="relative min-h-full overflow-hidden">
+      <AppBackground />
+      
+      <div className="relative z-10 flex flex-col h-full overflow-y-auto pb-32 p-6">
+        {/* Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center max-w-3xl mx-auto mb-16"
+        >
+          <motion.div
+            animate={{ rotate: [0, 360] }}
+            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+            className="inline-block mb-6"
+          >
+            <Activity className="w-16 h-16 text-blue-400 drop-shadow-[0_0_20px_rgba(59,130,246,0.5)]" />
+          </motion.div>
+          
+          <h1 className="text-5xl font-bold mb-4">
+            <Highlight className="text-slate-100">
+              Dashboard
+            </Highlight>
+          </h1>
+          
+          <p className="text-slate-400 text-lg">
+            Your day at a glance
+          </p>
+        </motion.div>
 
-      {/* Top Row: Focus + Timeline */}
-      <div className="grid grid-cols-2 gap-4">
-        <FocusSummaryCard summary={summary!} />
-        <MiniTimeline contextSwitches={summary!.contextSwitches} />
-      </div>
+        {/* Stats Grid - Minimal */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="max-w-3xl mx-auto w-full mb-16"
+        >
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[
+              { label: 'Focus', value: summary!.focusTime, unit: 'm', color: 'blue' },
+              { label: 'Deep Work', value: summary!.deepWorkPercentage, unit: '%', color: 'purple' },
+              { label: 'Switches', value: summary!.contextSwitches, unit: '', color: 'cyan' },
+              { label: 'Active', value: summary!.activeTime, unit: 'm', color: 'pink' },
+            ].map((stat, idx) => (
+              <motion.div
+                key={stat.label}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.2 + idx * 0.05 }}
+                className="text-center"
+              >
+                <p className="text-sm text-slate-500 mb-2">{stat.label}</p>
+                <p className="text-4xl font-bold text-slate-200">
+                  {stat.value}
+                  <span className="text-lg text-slate-500">{stat.unit}</span>
+                </p>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
 
-      {/* Recent Insights */}
-      <div>
-        <h2 className="text-lg font-medium mb-3">Recent Insights</h2>
-        <div className="grid grid-cols-3 gap-4">
-          {insights.slice(0, 3).map((insight) => (
-            <InsightCard key={insight.id} insight={insight} />
-          ))}
-        </div>
-      </div>
-
-      {/* Bottom Row: GitHub + Quick Access */}
-      <div className="grid grid-cols-2 gap-4">
-        <ActivitySparkline />
-        <QuickAccessPanel />
+        {/* Insights - Minimal */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="max-w-3xl mx-auto w-full"
+        >
+          <h2 className="text-sm uppercase tracking-wider text-slate-500 font-semibold mb-6 text-center">
+            Recent Activity
+          </h2>
+          
+          <div className="space-y-3">
+            {insights.map((insight, idx) => (
+              <motion.div
+                key={insight.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 + idx * 0.05 }}
+                className="group"
+              >
+                <div className="relative p-5 rounded-xl bg-white/5 border border-white/10 backdrop-blur-2xl hover:border-white/20 hover:bg-white/10 transition-all duration-300">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-base font-medium text-slate-200 truncate">
+                          {insight.title}
+                        </h3>
+                        {!insight.isRead && (
+                          <span className="w-2 h-2 rounded-full bg-blue-400 shrink-0" />
+                        )}
+                      </div>
+                      <p className="text-sm text-slate-400 line-clamp-2">{insight.description}</p>
+                      <p className="text-xs text-slate-600 mt-2">
+                        {insight.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 group-hover:translate-x-1 transition-all shrink-0" />
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </motion.div>
       </div>
     </div>
   );
