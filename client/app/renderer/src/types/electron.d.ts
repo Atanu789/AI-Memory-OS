@@ -1,5 +1,13 @@
 // Type definitions for IPC communication
 
+interface Window {
+  electron?: {
+    shell: {
+      openExternal: (url: string) => Promise<void>;
+    };
+  };
+}
+
 export interface DashboardSummary {
   focusTime: number; // in minutes
   deepWorkPercentage: number;
@@ -89,6 +97,9 @@ export interface Settings {
 
 // Electron API exposed via contextBridge
 export interface ElectronAPI {
+  // Shell
+  openExternal?: (url: string) => Promise<void>;
+
   // Dashboard
   getTodaySummary: () => Promise<DashboardSummary>;
   getRecentInsights: (limit: number) => Promise<Insight[]>;

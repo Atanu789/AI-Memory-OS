@@ -1,7 +1,10 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, shell } from "electron";
 
 // Expose type-safe API to renderer
 contextBridge.exposeInMainWorld("electronAPI", {
+  // Shell operations
+  openExternal: (url: string) => shell.openExternal(url),
+  
   // Dashboard
   getTodaySummary: () => ipcRenderer.invoke("dashboard:getTodaySummary"),
   getRecentInsights: (limit: number) => ipcRenderer.invoke("dashboard:getRecentInsights", limit),

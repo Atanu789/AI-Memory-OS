@@ -11,9 +11,21 @@ import {
   ChevronRight,
   ArrowLeft,
   ArrowRight,
-  Home
+  Home,
+  RefreshCw,
+  Code,
+  GitPullRequest,
+  GitFork,
+  Star,
+  MessageCircle,
+  Plus,
+  Trash2,
+  GitBranch,
+  Calendar
 } from 'lucide-react';
+import apiService, { TimelineData } from '../services/api.service';
 
+// UI types
 type MindMapNode = {
   name: string;
   description: string;
@@ -22,10 +34,18 @@ type MindMapNode = {
   _children?: MindMapNode[]; // Hidden children for collapse functionality
 };
 
-type D3HierarchyNode = d3.HierarchyNode<MindMapNode> & {
+type Repository = {
+  name: string;
+  full_name: string;
+  description: string | null;
+  language: string | null;
+  stargazers_count: number;
+  forks_count: number;
+  topics: string[];
+};
+
+type D3HierarchyNode = d3.HierarchyPointNode<MindMapNode> & {
   _children?: D3HierarchyNode[];
-  x?: number;
-  y?: number;
 };
 
 function findNode(root: MindMapNode, target: string): MindMapNode | null {
@@ -86,265 +106,179 @@ export default function MindMap() {
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
   const [navigationHistory, setNavigationHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [viewMode, setViewMode] = useState<'repos' | 'graph'>("repos");
+  
+  // Knowledge graph state
+  const [loading, setLoading] = useState(false);
+  const [repos, setRepos] = useState<Repository[]>([]);
+  const [repoMap, setRepoMap] = useState<Map<string, Repository>>(new Map());
+  const [repoAnalysis, setRepoAnalysis] = useState<{
+    whatYouDid: string[];
+    whenYouDid: string;
+    patterns: string[];
+    strengths: string[];
+    weaknesses: string[];
+  } | null>(null);
+  const [analysisCache, setAnalysisCache] = useState<Map<string, {
+    whatYouDid: string[];
+    whenYouDid: string;
+    patterns: string[];
+    strengths: string[];
+    weaknesses: string[];
+  }>>(new Map());
+  type CommitItem = {
+    sha: string;
+    message: string;
+    date: string;
+  };
+  const [commitCache, setCommitCache] = useState<Map<string, CommitItem[]>>(new Map());
+  const [cacheVersion, setCacheVersion] = useState<number>(0);
+  const [graphData, setGraphData] = useState<{ nodes: any[]; edges: any[] } | null>(null);
+  const [timelinePeriod, setTimelinePeriod] = useState<'week' | 'month' | 'all'>('month');
+  const [repoTimeline, setRepoTimeline] = useState<TimelineData | null>(null);
+
+  // Fetch repositories (root nodes)
+  useEffect(() => {
+    const fetchRepos = async () => {
+      try {
+        const data = await apiService.getRepositories();
+        const repoList: Repository[] = data.repositories || [];
+        setRepos(repoList);
+        const map = new Map<string, Repository>();
+        repoList.forEach((r) => {
+          map.set(r.name, r);
+        });
+        setRepoMap(map);
+      } catch (error) {
+        console.error('Failed to load repositories', error);
+      }
+    };
+    fetchRepos();
+  }, []);
+
+  // Fetch graph data when switching to graph mode
+  useEffect(() => {
+    const fetchGraph = async () => {
+      if (viewMode !== 'graph') return;
+      try {
+        const data = await apiService.getGraph({ focus: 'last_30_days', depth: 2, minImportance: 0.3 });
+        if (data?.nodes?.length) setGraphData(data);
+      } catch (err) {
+        console.error('Failed to load graph', err);
+      }
+    };
+    fetchGraph();
+  }, [viewMode]);
+
+  // Build MindMap hierarchy from repositories
+  const transformReposToHierarchy = (repositories: Repository[]): MindMapNode => {
+    const repoNodes: MindMapNode[] = repositories.map((repo) => {
+      const key = repo.full_name || `${repo.name}`;
+      const commits = commitCache.get(key) || [];
+      const commitChildren: MindMapNode[] = commits.map((c) => ({
+        name: c.message.length > 28 ? c.message.slice(0, 28) + '…' : c.message,
+        description: `${c.sha.slice(0,7)} • ${new Date(c.date).toLocaleString()}`,
+        highlights: ['commit'],
+      }));
+
+      return {
+        name: repo.name,
+        description: repo.description || 'No description provided',
+        highlights: [
+          repo.language || 'Unknown language',
+          `${repo.stargazers_count}★`,
+          `${repo.forks_count} forks`,
+        ],
+        children: [
+          ...(repo.topics || []).map((topic) => ({
+            name: topic,
+            description: `Topic in ${repo.name}`,
+          })),
+          ...commitChildren,
+        ],
+      };
+    });
+
+    return {
+      name: 'Repositories',
+      description: 'Your GitHub repositories as root nodes',
+      highlights: ['Click a repo to see AI analysis'],
+      children: repoNodes,
+    };
+  };
+
+  // Transform backend graph to hierarchical structure
+  const transformGraphToHierarchy = (graph: { nodes: any[]; edges: any[] }): MindMapNode => {
+    const nodeMap = new Map<string, MindMapNode>();
+    graph.nodes.forEach((node: any) => {
+      nodeMap.set(node.id, {
+        name: node.label || node.id,
+        description: node.summary || '',
+        highlights: [node.type || 'node'],
+        children: [],
+      });
+    });
+
+    const childrenMap = new Map<string, string[]>();
+    graph.edges.forEach((edge: any) => {
+      const from = edge.from || edge.source;
+      const to = edge.to || edge.target;
+      if (!childrenMap.has(from)) childrenMap.set(from, []);
+      childrenMap.get(from)!.push(to);
+    });
+
+    const hasParent = new Set((graph.edges || []).map((e: any) => e.to || e.target));
+    const rootNodes: MindMapNode[] = [];
+    graph.nodes.forEach((node: any) => {
+      if (!hasParent.has(node.id)) {
+        const n = nodeMap.get(node.id);
+        if (n) rootNodes.push(n);
+      }
+    });
+
+    const buildChildren = (id: string, visited = new Set<string>()) => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      const childIds = childrenMap.get(id) || [];
+      const node = nodeMap.get(id);
+      if (!node) return;
+      node.children = childIds.map((cid) => nodeMap.get(cid)).filter(Boolean) as MindMapNode[];
+      childIds.forEach((cid) => buildChildren(cid, visited));
+    };
+    graph.nodes.forEach((n: any) => buildChildren(n.id));
+
+    return {
+      name: 'Knowledge Graph',
+      description: `${graph.nodes.length} memories • ${graph.edges.length} connections`,
+      highlights: ['Live data', 'Auto-synced', 'Semantic links'],
+      children: rootNodes.length > 0 ? rootNodes : Array.from(nodeMap.values()).slice(0, 10),
+    };
+  };
 
   const data = useMemo<MindMapNode>(
-    () => ({
-      name: "Memory OS",
-      description: "How the system captures, organizes, and surfaces knowledge.",
-      highlights: ["Zoom and pan", "Click nodes", "Radial layout"],
-      children: [
-        {
-          name: "Capture",
-          description: "Sources that feed the knowledge base in real time.",
-          highlights: ["App events", "Git activity", "User notes"],
-          children: [
-            {
-              name: "Telemetry",
-              description: "Usage signals like focus, windows, and activity spikes.",
-              highlights: ["Window focus", "Process stats"],
-            },
-            {
-              name: "Integrations",
-              description: "External tools that push structured updates.",
-              highlights: ["GitHub", "Calendar", "Docs"],
-              children: [
-                {
-                  name: "GitHub Events",
-                  description: "Real-time monitoring of all GitHub activity streams.",
-                  highlights: ["Webhooks", "GraphQL API", "REST API"],
-                  children: [
-                    {
-                      name: "Commits",
-                      description: "Track every code change with context and patterns.",
-                      highlights: ["Messages", "Diff analysis", "File changes", "Authors"],
-                    },
-                    {
-                      name: "Pull Requests",
-                      description: "Monitor PR lifecycle from creation to merge.",
-                      highlights: ["Reviews", "Comments", "Approvals", "CI status"],
-                    },
-                    {
-                      name: "Issues",
-                      description: "Track bugs, features, and project management.",
-                      highlights: ["Labels", "Milestones", "Assignees", "Comments"],
-                    },
-                    {
-                      name: "Releases",
-                      description: "Version tracking and deployment history.",
-                      highlights: ["Tags", "Changelogs", "Assets", "Pre-releases"],
-                    },
-                  ],
-                },
-                {
-                  name: "Repository Intelligence",
-                  description: "Deep analysis of codebase structure and health.",
-                  highlights: ["Languages", "Dependencies", "Activity"],
-                  children: [
-                    {
-                      name: "Code Patterns",
-                      description: "Identify recurring patterns and best practices.",
-                      highlights: ["Refactoring", "Architecture", "Tech debt"],
-                    },
-                    {
-                      name: "Collaboration",
-                      description: "Team dynamics and contribution patterns.",
-                      highlights: ["Contributors", "Reviews", "Pair programming"],
-                    },
-                    {
-                      name: "Branch Strategy",
-                      description: "Git flow and branching patterns analysis.",
-                      highlights: ["Feature branches", "Hotfixes", "Release flow"],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              name: "Manual Notes",
-              description: "User-authored context that anchors the stream.",
-              highlights: ["Quick captures", "Tags"],
-            },
-          ],
-        },
-        {
-          name: "Organize",
-          description: "Pipelines that structure, dedupe, and cluster knowledge.",
-          highlights: ["Embeddings", "Chunking", "Threading"],
-          children: [
-            {
-              name: "Temporal",
-              description: "Time-aware grouping to retain narrative flow.",
-              highlights: ["Timeline", "Session rollups"],
-            },
-            {
-              name: "Entities",
-              description: "People, repos, projects, and topics extracted from text.",
-              highlights: ["NER", "Topic tags"],
-              children: [
-                {
-                  name: "GitHub Entities",
-                  description: "Extract and link GitHub-specific entities.",
-                  highlights: ["Repos", "Contributors", "Organizations"],
-                  children: [
-                    {
-                      name: "Developers",
-                      description: "Track individual contributors and their expertise.",
-                      highlights: ["Skills", "Activity patterns", "Code ownership"],
-                    },
-                    {
-                      name: "Projects",
-                      description: "Group repositories into logical project clusters.",
-                      highlights: ["Microservices", "Monorepos", "Dependencies"],
-                    },
-                    {
-                      name: "Tech Stack",
-                      description: "Language and framework usage across codebases.",
-                      highlights: ["Languages", "Frameworks", "Tools", "Versions"],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              name: "Quality",
-              description: "Signal-to-noise filters to keep the graph clean.",
-              highlights: ["Dedup", "Source weighting"],
-            },
-          ],
-        },
-        {
-          name: "Surface",
-          description: "Ways the user sees, queries, and navigates the memory.",
-          highlights: ["Dashboards", "Mind map", "Search"],
-          children: [
-            {
-              name: "Insights",
-              description: "Daily and weekly summaries driven by embeddings.",
-              highlights: ["Streaks", "Anomalies"],
-              children: [
-                {
-                  name: "GitHub Analytics",
-                  description: "Visualize coding patterns and productivity metrics.",
-                  highlights: ["Commit graphs", "PR velocity", "Review time"],
-                  children: [
-                    {
-                      name: "Productivity Metrics",
-                      description: "Quantify development velocity and efficiency.",
-                      highlights: ["Lines changed", "Files touched", "Merge frequency"],
-                    },
-                    {
-                      name: "Code Quality",
-                      description: "Track technical debt and code health indicators.",
-                      highlights: ["Test coverage", "Complexity", "Duplication"],
-                    },
-                    {
-                      name: "Collaboration Health",
-                      description: "Measure team interaction and knowledge sharing.",
-                      highlights: ["PR discussions", "Code reviews", "Pair stats"],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              name: "Ask",
-              description: "Natural language entry point over the memory graph.",
-              highlights: ["Chat", "Source citations"],
-              children: [
-                {
-                  name: "GitHub Queries",
-                  description: "Ask questions about your code and contributions.",
-                  highlights: ["Commit history", "PR status", "Code search"],
-                  children: [
-                    {
-                      name: "Code Context",
-                      description: "Understand 'what', 'when', and 'why' of changes.",
-                      highlights: ["Blame info", "Change motivation", "Related commits"],
-                    },
-                    {
-                      name: "Impact Analysis",
-                      description: "Explore ripple effects of code changes.",
-                      highlights: ["Affected files", "Breaking changes", "Dependencies"],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              name: "Links",
-              description: "Connections across people, projects, and artifacts.",
-              highlights: ["Bidirectional edges", "Context hops"],
-            },
-          ],
-        },
-        {
-          name: "Automate",
-          description: "Workers that trigger actions when patterns are detected.",
-          highlights: ["Schedules", "Graph triggers"],
-          children: [
-            {
-              name: "Agents",
-              description: "Task-focused routines with scoped memory access.",
-              highlights: ["Workers", "Safety rails"],
-              children: [
-                {
-                  name: "GitHub Automation",
-                  description: "Intelligent bots for code and workflow management.",
-                  highlights: ["Auto-review", "PR suggestions", "Issue triage"],
-                  children: [
-                    {
-                      name: "Code Review Bot",
-                      description: "AI-powered code review and suggestions.",
-                      highlights: ["Best practices", "Security checks", "Style guide"],
-                    },
-                    {
-                      name: "PR Assistant",
-                      description: "Auto-generate descriptions and manage PR lifecycle.",
-                      highlights: ["Descriptions", "Labels", "Merge strategy"],
-                    },
-                    {
-                      name: "Issue Classifier",
-                      description: "Intelligent labeling and assignment of issues.",
-                      highlights: ["Priority", "Type detection", "Auto-assign"],
-                    },
-                  ],
-                },
-              ],
-            },
-            {
-              name: "Feedback",
-              description: "Human loop for corrections that feed retraining.",
-              highlights: ["Thumbs", "Labels"],
-            },
-            {
-              name: "Delivery",
-              description: "Notifications and integrations that ship outcomes.",
-              highlights: ["Email", "Slack", "Webhooks"],
-              children: [
-                {
-                  name: "GitHub Notifications",
-                  description: "Smart filtering and routing of GitHub events.",
-                  highlights: ["PR mentions", "Review requests", "CI failures"],
-                  children: [
-                    {
-                      name: "Alert Priorities",
-                      description: "ML-ranked notifications based on importance.",
-                      highlights: ["Urgency", "Context", "Your involvement"],
-                    },
-                    {
-                      name: "Digest Summaries",
-                      description: "Batched updates for non-urgent activities.",
-                      highlights: ["Daily recap", "Weekly report", "Team updates"],
-                    },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    }),
-    []
+    () => {
+      if (viewMode === 'repos') {
+        if (repos.length > 0) {
+          return transformReposToHierarchy(repos);
+        }
+        return {
+          name: "Repositories",
+          description: "Click 'Sync' to load your repositories",
+          highlights: ["No data yet"],
+          children: [],
+        };
+      }
+      if (graphData && graphData.nodes?.length) {
+        return transformGraphToHierarchy(graphData);
+      }
+      return {
+        name: "Knowledge Graph",
+        description: "Click 'Sync' to load your memory graph",
+        highlights: ["No data yet"],
+        children: [],
+      };
+    },
+    [viewMode, repos, graphData, cacheVersion]
   );
 
   const [activeName, setActiveName] = useState<string>(data.name);
@@ -366,6 +300,72 @@ export default function MindMap() {
     setNavigationHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
   };
+
+  // Load AI analysis when a repo is focused
+  useEffect(() => {
+    const repo = repoMap.get(activeName);
+    if (!repo) {
+      setRepoAnalysis(null);
+      setRepoTimeline(null);
+      return;
+    }
+
+    const load = async () => {
+      try {
+        const [owner] = repo.full_name.split('/');
+        const key = repo.full_name;
+        // Use cache if available
+        if (analysisCache.has(key)) {
+          setRepoAnalysis(analysisCache.get(key)!);
+          return;
+        }
+        const data = await apiService.analyzeRepository(owner, repo.name);
+        const analysisData = data.analysis;
+        setRepoAnalysis(analysisData);
+        // Update caches for analysis and commits
+        setAnalysisCache(prev => {
+          const next = new Map(prev);
+          next.set(key, analysisData);
+          return next;
+        });
+        const commits: CommitItem[] = (data.commits || []).map((c: any) => ({
+          sha: c.sha,
+          message: c.commit?.message || '',
+          date: c.commit?.author?.date || new Date().toISOString(),
+        }));
+        setCommitCache(prev => {
+          const next = new Map(prev);
+          next.set(key, commits);
+          return next;
+        });
+        setCacheVersion(v => v + 1);
+
+        // Load timeline and filter for this repo
+        try {
+          const tl = await apiService.getTimelineData(timelinePeriod);
+          const filteredActivities: TimelineData['activities'] = {};
+          Object.entries(tl.activities || {}).forEach(([date, acts]) => {
+            const f = acts.filter((a: any) => {
+              const name = a?.repo?.name || '';
+              return name === key || name.endsWith(`/${repo.name}`) || name.includes(repo.name);
+            });
+            if (f.length > 0) filteredActivities[date] = f;
+          });
+          const total = Object.values(filteredActivities).reduce((sum, arr) => sum + arr.length, 0);
+          setRepoTimeline({ activities: filteredActivities, insight: tl.insight, totalActivities: total });
+        } catch (err) {
+          console.error('Failed to load timeline for repo', err);
+          setRepoTimeline(null);
+        }
+      } catch (error) {
+        console.error('Failed to analyze repository', error);
+        setRepoAnalysis(null);
+        setRepoTimeline(null);
+      }
+    };
+
+    load();
+  }, [activeName, repoMap]);
 
   const goBack = () => {
     if (historyIndex > 0) {
@@ -466,7 +466,7 @@ export default function MindMap() {
       svg.call(zoom.transform as any, transformRef.current);
     }
 
-    const root = d3.hierarchy<MindMapNode>(data) as D3HierarchyNode;
+    const root = d3.hierarchy<MindMapNode>(data) as unknown as D3HierarchyNode;
     
     // Apply collapsed state
     const applyCollapse = (node: D3HierarchyNode) => {
@@ -485,17 +485,22 @@ export default function MindMap() {
     const pathNames = new Set(pathToActive.map(n => n.data.name));
     
     // Horizontal tree layout
+    const LEVEL_X_OFFSET = 40; // extra horizontal spacing per depth
     const tree = d3
       .tree<MindMapNode>()
-      .size([height - 200, width - 300])
+      .size([height - 180, width - 240])
       .separation((a, b) => {
-        return a.parent === b.parent ? 1 : 1.2;
+        const la = a.data.name.length;
+        const lb = b.data.name.length;
+        const base = a.parent === b.parent ? 1.6 : 2.2;
+        const extra = Math.min((la + lb) / 60, 0.6);
+        return base + extra;
       });
 
     tree(root);
 
     // Minimal color palette
-    const getNodeColor = (d: d3.HierarchyPointNode<MindMapNode>) => {
+    const getNodeColor = (d: D3HierarchyNode) => {
       if (d.data.name === activeName) return "#3b82f6"; // blue-500
       if (pathNames.has(d.data.name)) return "#6366f1"; // indigo-500
       return "#64748b"; // slate-500
@@ -505,23 +510,23 @@ export default function MindMap() {
     const prevPositions = prevPositionsRef.current;
 
     // Helper to compute initial position (prev or parent's prev)
-    const initialCoord = (d: d3.HierarchyPointNode<MindMapNode>) => {
+    const initialCoord = (d: D3HierarchyNode) => {
       const prev = prevPositions.get(d.data.name);
       if (prev) return { x: prev.x, y: prev.y };
       if (d.parent) {
         const pprev = prevPositions.get(d.parent.data.name);
         if (pprev) return { x: pprev.x, y: pprev.y };
       }
-      return { x: d.x ?? 0, y: d.y ?? 0 };
+      return { x: d.x, y: d.y + d.depth * LEVEL_X_OFFSET };
     };
 
-    const nodes = root.descendants();
+    const nodes = root.descendants() as D3HierarchyNode[];
     const linksData = root.links();
 
     // Horizontal links generator
     const linkGen = d3
       .linkHorizontal<d3.HierarchyPointLink<MindMapNode>, any>()
-      .x((d: any) => d.y)
+      .x((d: any) => (d.y + (d.depth || 0) * LEVEL_X_OFFSET))
       .y((d: any) => d.x);
 
     // Links selection with keyed join
@@ -580,57 +585,67 @@ export default function MindMap() {
       .attr("cursor", "pointer")
       .attr("opacity", 1);
 
+    // Enter: create rect
+    nodeEnter
+      .append("rect")
+      .attr("rx", 6)
+      .attr("ry", 6);
+
+    // Enter: create text
+    nodeEnter
+      .append("text")
+      .attr("dy", "0.35em")
+      .attr("text-anchor", "middle")
+      .style("pointer-events", "none");
+
+    // Update + Enter merged
     const nodeMerge = nodeEnter.merge(nodeSel as any);
     nodeMerge
       .transition()
       .duration(300)
       .ease(d3.easeCubicOut)
-      .attr("transform", (d) => `translate(${d.y},${d.x})`);
+      .attr("transform", (d) => `translate(${d.y + d.depth * LEVEL_X_OFFSET},${d.x})`);
 
     // Update previous positions map
     const newPositions = new Map<string, { x: number; y: number }>();
-    nodes.forEach((d) => newPositions.set(d.data.name, { x: d.x ?? 0, y: d.y ?? 0 }));
+    nodes.forEach((d) => newPositions.set(d.data.name, { x: d.x, y: d.y + d.depth * LEVEL_X_OFFSET }));
     prevPositionsRef.current = newPositions;
 
-    // Add rectangular boxes
-    nodeMerge
-      .append("rect")
-      .attr("width", (d) => {
+    // Update rect attributes and handlers
+    const rectMerge = nodeMerge.select<SVGRectElement>("rect");
+    rectMerge
+      .attr("width", (d: any) => {
         const textLength = d.data.name.length;
         return Math.max(110, textLength * 7.5 + 16);
       })
-      .attr("height", (d) => (d.depth === 0 ? 50 : 42))
-      .attr("x", (d) => {
+      .attr("height", (d: any) => (d.depth === 0 ? 50 : 42))
+      .attr("x", (d: any) => {
         const textLength = d.data.name.length;
         return -Math.max(110, textLength * 7.5 + 16) / 2;
       })
-      .attr("y", (d) => (d.depth === 0 ? -25 : -21))
-      .attr("rx", 6)
-      .attr("ry", 6)
-      .attr("fill", (d) => {
+      .attr("y", (d: any) => (d.depth === 0 ? -25 : -21))
+      .attr("fill", (d: any) => {
         if (d.data.name === activeName) return "#1e40af"; // blue-800
         if (pathNames.has(d.data.name)) return "#1e3a8a"; // blue-900
         return "#0f172a"; // slate-950
       })
-      .attr("stroke", (d) => getNodeColor(d))
-      .attr("stroke-width", (d) => {
+      .attr("stroke", (d: any) => getNodeColor(d as any))
+      .attr("stroke-width", (d: any) => {
         if (d.data.name === activeName) return 2.5;
         if (pathNames.has(d.data.name)) return 2.5;
         return 1.5;
       })
       .attr("opacity", 0.95)
-      .style("filter", (d) => {
+      .style("filter", (d: any) => {
         if (d.data.name === activeName) return "drop-shadow(0 0 10px rgba(59, 130, 246, 0.7))";
         if (pathNames.has(d.data.name)) return "drop-shadow(0 0 6px rgba(99, 102, 241, 0.5))";
         return "none";
       })
       .style("transition", "all 0.2s ease")
-      .on("click", (event, d) => {
+      .on("click", (event: any, d: any) => {
         event.stopPropagation();
-        if (d.children || d._children) {
-          // Add scale animation on toggle
+        if (d.children || (d as any)._children) {
           d3.select(event.currentTarget)
-            .select("rect")
             .transition()
             .duration(150)
             .attr("transform", "scale(1.1)")
@@ -642,86 +657,83 @@ export default function MindMap() {
           setActiveName(d.data.name);
         }
       })
-      .on("mouseenter", function(event, d) {
+      .on("mouseenter", function(this: SVGRectElement, _event, _d: any) {
         d3.select(this)
-          .select("rect")
           .transition()
           .duration(150)
           .attr("opacity", 1)
           .attr("stroke-width", 3);
       })
-      .on("mouseleave", function(event, d) {
+      .on("mouseleave", function(this: SVGRectElement, _event, d: any) {
         d3.select(this)
-          .select("rect")
           .transition()
           .duration(150)
           .attr("opacity", 0.95)
-          .attr("stroke-width", (d: any) => {
+          .attr("stroke-width", () => {
             if (d.data.name === activeName) return 2.5;
             if (pathNames.has(d.data.name)) return 2.5;
             return 1.5;
           });
       });
 
-    // Add text labels
-    nodeMerge
-      .append("text")
-      .attr("dy", "0.35em")
-      .attr("text-anchor", "middle")
-      .attr("font-size", (d) => (d.depth === 0 ? 18 : 15))
-      .attr("font-weight", (d) => {
+    // Update text attributes
+    const textMerge = nodeMerge.select<SVGTextElement>("text");
+    textMerge
+      .attr("font-size", (d: any) => (d.depth === 0 ? 18 : 15))
+      .attr("font-weight", (d: any) => {
         if (d.data.name === activeName) return 600;
         if (pathNames.has(d.data.name)) return 500;
         return 400;
       })
-      .attr("fill", (d) => {
+      .attr("fill", (d: any) => {
         if (d.data.name === activeName) return "#e0f2fe"; // sky-100
         if (pathNames.has(d.data.name)) return "#dbeafe"; // blue-100
         return "#cbd5e1"; // slate-300
       })
       .style("transition", "all 0.3s ease")
-      .style("pointer-events", "none")
-      .text((d) => {
+      .text((d: any) => {
         const maxLength = d.depth === 0 ? 20 : 16;
-        return d.data.name.length > maxLength 
-          ? d.data.name.substring(0, maxLength) + '...' 
+        return d.data.name.length > maxLength
+          ? d.data.name.substring(0, maxLength) + "..."
           : d.data.name;
       })
       .attr("opacity", 1);
 
-    // Add expand/collapse indicator for nodes with children
-    const expandIndicator = nodeMerge
-      .filter((d) => d.children || d._children)
+    // Reset and add expand/collapse indicator to avoid duplicates
+    nodeMerge.selectAll("g.expand-indicator").remove();
+    const indicatorParent = nodeMerge
+      .filter((d: any) => Boolean(d.children) || Boolean((d as any)._children))
       .append("g")
-      .attr("transform", (d) => {
+      .attr("class", "expand-indicator")
+      .attr("transform", (d: any) => {
         const textLength = d.data.name.length;
         return `translate(${Math.max(110, textLength * 7.5 + 16) / 2 + 6}, 0)`;
       })
       .attr("cursor", "pointer")
       .attr("opacity", 0);
 
-    expandIndicator
+    indicatorParent
       .transition()
       .duration(500)
-      .delay((d, i) => d.depth * 100 + i * 20 + 300)
+      .delay((d: any, i: number) => d.depth * 100 + i * 20 + 300)
       .ease(d3.easeCubicOut)
       .attr("opacity", 1);
 
-    expandIndicator
+    indicatorParent
       .append("circle")
       .attr("r", 8)
-      .attr("fill", (d) => getNodeColor(d))
+      .attr("fill", (d: any) => getNodeColor(d as any))
       .attr("stroke", "#1e293b")
       .attr("stroke-width", 1.5);
 
-    expandIndicator
+    indicatorParent
       .append("text")
       .attr("dy", "0.35em")
       .attr("text-anchor", "middle")
       .attr("font-size", 10)
       .attr("font-weight", 700)
       .attr("fill", "#ffffff")
-      .text((d) => d.children ? "−" : "+");
+      .text((d: any) => (d.children ? "−" : "+"));
   }, [data, activeName, collapsedNodes]);
 
   return (
@@ -735,11 +747,67 @@ export default function MindMap() {
             <h1 className="text-3xl font-bold text-slate-50 bg-gradient-to-r from-sky-400 to-purple-500 bg-clip-text text-transparent">
               Memory Mind Map
             </h1>
-            <p className="text-sm text-slate-400 mt-1">Explore how signals move through the system.</p>
+            <p className="text-sm text-slate-400 mt-1">
+              {viewMode === 'repos'
+                ? (repos.length > 0 ? `Repositories • ${repos.length} loaded` : 'Explore how signals move through the system.')
+                : (graphData?.nodes?.length ? `Knowledge Graph • ${graphData.nodes.length} memories • ${graphData.edges.length} connections` : 'Explore how signals move through the system.')}
+            </p>
           </div>
           
           {/* Control Buttons */}
           <div className="flex items-center gap-2">
+            {/* View Mode Toggle */}
+            <div className="flex items-center gap-1 bg-slate-800/80 border border-slate-700/80 rounded-lg p-1 backdrop-blur-sm">
+              <button
+                onClick={() => setViewMode('repos')}
+                className={`p-2 rounded transition-colors ${viewMode === 'repos' ? 'bg-sky-500/20 border border-sky-500/50' : 'hover:bg-slate-700/50'}`}
+                title="Repositories view"
+              >
+                <span className="text-xs text-slate-200">Repos</span>
+              </button>
+              <button
+                onClick={() => setViewMode('graph')}
+                className={`p-2 rounded transition-colors ${viewMode === 'graph' ? 'bg-purple-500/20 border border-purple-500/50' : 'hover:bg-slate-700/50'}`}
+                title="Knowledge graph view"
+              >
+                <span className="text-xs text-slate-200">Graph</span>
+              </button>
+            </div>
+            {/* Sync Button */}
+            <button
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  await apiService.syncMemories();
+                  setTimeout(async () => {
+                    if (viewMode === 'repos') {
+                      const data = await apiService.getRepositories();
+                      const repoList: Repository[] = data.repositories || [];
+                      setRepos(repoList);
+                      const map = new Map<string, Repository>();
+                      repoList.forEach((r) => map.set(r.name, r));
+                      setRepoMap(map);
+                    } else {
+                      const data = await apiService.getGraph({ focus: 'last_30_days', depth: 2, minImportance: 0.3 });
+                      setGraphData(data);
+                    }
+                  }, 2000);
+                } catch (error) {
+                  console.error('Sync failed:', error);
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+              className="flex items-center gap-2 px-3 py-2 bg-sky-500/20 border border-sky-500/50 rounded-lg hover:bg-sky-500/30 transition-colors backdrop-blur-2xl disabled:opacity-50"
+              title="Sync memories from GitHub"
+            >
+              <RefreshCw className={`w-4 h-4 text-sky-400 ${loading ? 'animate-spin' : ''}`} />
+              <span className="text-sm text-sky-300 font-medium">
+                {loading ? 'Syncing...' : 'Sync'}
+              </span>
+            </button>
+
             {/* History Navigation */}
             <div className="flex items-center gap-1 bg-slate-800/80 border border-slate-700/80 rounded-lg p-1 backdrop-blur-sm">
               <button
@@ -879,8 +947,102 @@ export default function MindMap() {
           <svg ref={svgRef} className="w-full h-[540px] xl:h-full relative z-10" />
         </div>
 
-        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 flex flex-col gap-4 shadow-2xl backdrop-blur-2xl relative overflow-hidden">
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-5 flex flex-col gap-4 shadow-2xl backdrop-blur-2xl relative overflow-y-auto max-h-[540px] xl:max-h-full">
           <div className="absolute inset-0 bg-gradient-to-br from-sky-500/5 to-purple-500/5 pointer-events-none"></div>
+          {repoTimeline && repoMap.has(activeNode.name) && (
+            <div className="relative z-10 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-blue-400" />
+                  <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Activity Timeline</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {(['week','month','all'] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={async () => {
+                        try {
+                          setTimelinePeriod(p);
+                          const tl = await apiService.getTimelineData(p);
+                          const repo = repoMap.get(activeNode.name)!;
+                          const key = repo.full_name;
+                          const filtered: TimelineData['activities'] = {};
+                          Object.entries(tl.activities || {}).forEach(([date, acts]) => {
+                            const f = acts.filter((a: any) => {
+                              const nm = a?.repo?.name || '';
+                              return nm === key || nm.endsWith(`/${repo.name}`) || nm.includes(repo.name);
+                            });
+                            if (f.length > 0) filtered[date] = f;
+                          });
+                          const total = Object.values(filtered).reduce((s, arr) => s + arr.length, 0);
+                          setRepoTimeline({ activities: filtered, insight: tl.insight, totalActivities: total });
+                        } catch (err) {
+                          console.error('Timeline reload failed', err);
+                        }
+                      }}
+                      className={`px-2 py-1 rounded text-xs ${timelinePeriod===p ? 'bg-blue-500/20 border border-blue-500/40 text-blue-300' : 'bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10'}`}
+                    >{p}</button>
+                  ))}
+                </div>
+              </div>
+              {repoTimeline.insight && (
+                <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/20 rounded-lg p-3">
+                  <p className="text-sm text-slate-200">{repoTimeline.insight}</p>
+                </div>
+              )}
+              <div className="space-y-3">
+                {Object.entries(repoTimeline.activities).map(([date, acts]) => (
+                  <div key={date} className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-px flex-1 bg-white/10" />
+                      <span className="text-xs text-slate-400 px-2 py-1 rounded-full bg-white/5 border border-white/10">{date}</span>
+                      <div className="h-px flex-1 bg-white/10" />
+                    </div>
+                    <div className="space-y-2">
+                      {acts.slice(0,5).map((a: any) => (
+                        <div key={a.id} className="group flex items-start gap-3 p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-2xl hover:border-white/20 hover:bg-white/10 transition-all duration-300">
+                          <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
+                            {(() => {
+                              const t = a.type;
+                              if (t === 'PushEvent') return <Code className="w-4 h-4" />;
+                              if (t === 'PullRequestEvent') return <GitPullRequest className="w-4 h-4" />;
+                              if (t === 'ForkEvent') return <GitFork className="w-4 h-4" />;
+                              if (t === 'WatchEvent') return <Star className="w-4 h-4" />;
+                              if (t === 'IssuesEvent') return <MessageCircle className="w-4 h-4" />;
+                              if (t === 'CreateEvent') return <Plus className="w-4 h-4" />;
+                              if (t === 'DeleteEvent') return <Trash2 className="w-4 h-4" />;
+                              return <GitBranch className="w-4 h-4" />;
+                            })()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 text-[11px] font-medium">
+                                {String(a.type).replace('Event','')}
+                              </span>
+                              <span className="text-[11px] text-slate-500">
+                                {new Date(a.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-300 truncate">
+                              {a.repo?.name}
+                            </p>
+                            {a.payload?.commits && a.payload.commits.length > 0 && (
+                              <p className="text-[11px] text-slate-500 line-clamp-1">
+                                {a.payload.commits[0].message}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {repoTimeline.totalActivities === 0 && (
+                  <div className="text-xs text-slate-500">No activity found for this repository.</div>
+                )}
+              </div>
+            </div>
+          )}
           
           <div className="flex items-center justify-between relative z-10">
             <div className="flex-1">
@@ -912,6 +1074,58 @@ export default function MindMap() {
               </div>
             </div>
           )}
+
+          {repoMap.has(activeNode.name) && !repoAnalysis && (
+            <div className="relative z-10 bg-slate-800/40 border border-slate-700/60 rounded-lg p-3 text-sm text-slate-300">
+              Fetching AI analysis for this repository...
+            </div>
+          )}
+
+          {repoAnalysis && repoMap.has(activeNode.name) && (
+            <div className="relative z-10 space-y-3">
+              <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">AI Analysis</p>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="bg-slate-800/40 border border-slate-700/60 rounded-lg p-3">
+                  <p className="text-xs text-slate-400 font-semibold mb-1">What you did</p>
+                  <ul className="list-disc list-inside text-sm text-slate-100 space-y-1">
+                    {repoAnalysis.whatYouDid.map((item, idx) => (
+                      <li key={`${item}-${idx}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="bg-slate-800/40 border border-slate-700/60 rounded-lg p-3">
+                  <p className="text-xs text-slate-400 font-semibold mb-1">When</p>
+                  <p className="text-sm text-slate-100">{repoAnalysis.whenYouDid}</p>
+                </div>
+                <div className="bg-slate-800/40 border border-slate-700/60 rounded-lg p-3">
+                  <p className="text-xs text-slate-400 font-semibold mb-1">Patterns</p>
+                  <ul className="list-disc list-inside text-sm text-slate-100 space-y-1">
+                    {repoAnalysis.patterns.map((item, idx) => (
+                      <li key={`${item}-${idx}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="bg-slate-800/40 border border-slate-700/60 rounded-lg p-3">
+                  <p className="text-xs text-slate-400 font-semibold mb-1">Strengths</p>
+                  <ul className="list-disc list-inside text-sm text-slate-100 space-y-1">
+                    {repoAnalysis.strengths.map((item, idx) => (
+                      <li key={`${item}-${idx}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="bg-slate-800/40 border border-slate-700/60 rounded-lg p-3">
+                  <p className="text-xs text-slate-400 font-semibold mb-1">Weaknesses</p>
+                  <ul className="list-disc list-inside text-sm text-slate-100 space-y-1">
+                    {repoAnalysis.weaknesses.map((item, idx) => (
+                      <li key={`${item}-${idx}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+
+          
 
           {activeNode?.children && activeNode.children.length > 0 && (
             <div className="mt-auto relative z-10">

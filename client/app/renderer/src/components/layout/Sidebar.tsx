@@ -2,29 +2,53 @@ import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Network, 
-  Clock, 
-  MessageSquare, 
   Settings,
   Brain,
   Zap,
-  ChevronRight
+  ChevronRight,
+  User,
+  GitBranch
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
+import { cn } from '../../lib/utils';
+
+interface SidebarProps {
+  collapsed?: boolean;
+  open?: boolean;
+  onToggleCollapse?: () => void;
+  onClose?: () => void;
+}
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', gradient: 'from-blue-500 to-cyan-500' },
   { to: '/mindmap', icon: Network, label: 'Mind Map', gradient: 'from-purple-500 to-pink-500' },
-  { to: '/timeline', icon: Clock, label: 'Timeline', gradient: 'from-orange-500 to-yellow-500' },
-  { to: '/ask', icon: Brain, label: 'Ask Brain', gradient: 'from-green-500 to-emerald-500' },
+  { to: '/repositories', icon: GitBranch, label: 'Repositories', gradient: 'from-green-500 to-emerald-500' },
+  { to: '/ask', icon: Brain, label: 'Ask Brain', gradient: 'from-cyan-500 to-blue-500' },
+  { to: '/profile', icon: User, label: 'Profile', gradient: 'from-blue-500 to-indigo-500' },
   { to: '/settings', icon: Settings, label: 'Settings', gradient: 'from-slate-500 to-slate-600' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed = false, open = true, onToggleCollapse, onClose }: SidebarProps) {
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
 
+  const expandedWidth = 256; // w-64
+  const collapsedWidth = 80;  // ~w-20
+
   return (
-    <aside className="w-64 bg-slate-900/30 backdrop-blur-2xl border-r border-white/10 flex flex-col relative overflow-visible">
+    <motion.aside
+      className={cn(
+        "fixed md:relative left-0 top-0 md:top-auto md:left-auto h-screen md:h-auto bg-slate-900/30 backdrop-blur-2xl border-r border-white/10 flex flex-col overflow-visible z-40",
+        !open && "pointer-events-none"
+      )}
+      initial={false}
+      animate={{
+        width: collapsed ? collapsedWidth : expandedWidth,
+        x: open ? 0 : -expandedWidth,
+        opacity: open ? 1 : 0,
+      }}
+      transition={{ type: 'spring', stiffness: 280, damping: 30 }}
+    >
     
       
       {/* Outer glow effect */}
@@ -56,10 +80,10 @@ export default function Sidebar() {
         className="absolute top-0 -right-2 w-8 h-full bg-gradient-to-l from-blue-500/20 via-blue-500/5 to-transparent blur-xl pointer-events-none"
       />
       
-      {/* Logo Section */}
-      <div className="h-16 flex items-center px-5 relative z-10">
+      {/* Header Section */}
+      <div className="h-16 flex items-center px-4 relative z-10 gap-2">
         <motion.div 
-          className="flex items-center gap-3 w-full group cursor-pointer"
+          className="flex items-center gap-3 flex-1 group cursor-pointer overflow-hidden"
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
         >
@@ -76,13 +100,36 @@ export default function Sidebar() {
               <Brain className="w-5 h-5 text-blue-400" />
             </motion.div>
           </div>
-          <div className="flex-1">
-            <h1 className="text-base font-bold text-slate-200">
-              AI Memory OS
-            </h1>
-            <p className="text-[10px] text-slate-500 font-medium">Intelligent Knowledge Graph</p>
-          </div>
+          <motion.div
+            animate={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 'auto' }}
+            className="flex-1 overflow-hidden"
+          >
+            <h1 className="text-base font-bold text-slate-200 whitespace-nowrap">AI Memory OS</h1>
+            <p className="text-[10px] text-slate-500 font-medium whitespace-nowrap">Intelligent Knowledge Graph</p>
+          </motion.div>
         </motion.div>
+        {/* Controls */}
+        <div className="flex items-center gap-2">
+          <motion.button
+            onClick={onToggleCollapse}
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            aria-label="Toggle sidebar width"
+          >
+            <ChevronRight className={cn("w-5 h-5 text-slate-300 transition-transform", collapsed ? "rotate-180" : "rotate-0")} />
+          </motion.button>
+          <motion.button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-white/10 transition-colors md:hidden"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            aria-label="Close sidebar"
+          >
+            {/* Using Zap as a close indicator for style; replace if desired */}
+            <Zap className="w-5 h-5 text-slate-300" />
+          </motion.button>
+        </div>
       </div>
       
       {/* Navigation Section */}
@@ -112,43 +159,37 @@ export default function Sidebar() {
                   />
                 )}
                 
-                <div className={`
-                  flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 relative group
-                  ${isActive 
-                    ? 'bg-slate-800/50 border border-slate-700/50' 
-                    : 'hover:bg-slate-800/30 border border-transparent hover:border-slate-700/30'
-                  }
-                `}>
+                <div className={cn(
+                  "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 relative group",
+                  isActive ? "bg-slate-800/50 border border-slate-700/50" : "hover:bg-slate-800/30 border border-transparent hover:border-slate-700/30"
+                )}>
                   {/* Icon */}
-                  <div className={`
-                    relative p-2 rounded-lg transition-all duration-300
-                    ${isActive 
-                      ? 'bg-slate-700/50 border border-slate-600/50' 
-                      : 'bg-slate-800/50 group-hover:bg-slate-700/50'
-                    }
-                  `}>
+                  <div className={cn(
+                    "relative p-2 rounded-lg transition-all duration-300",
+                    isActive ? "bg-slate-700/50 border border-slate-600/50" : "bg-slate-800/50 group-hover:bg-slate-700/50"
+                  )}>
                     <item.icon 
-                      className={`w-4 h-4 relative z-10 transition-colors ${
-                        isActive ? 'text-blue-400' : 'text-slate-400 group-hover:text-slate-200'
-                      }`}
+                      className={cn("w-4 h-4 relative z-10 transition-colors",
+                        isActive ? "text-blue-400" : "text-slate-400 group-hover:text-slate-200"
+                      )}
                     />
                   </div>
                   
                   {/* Label */}
-                  <span className={`
-                    text-sm font-medium flex-1 transition-colors relative z-10
-                    ${isActive 
-                      ? 'text-slate-50' 
-                      : 'text-slate-400 group-hover:text-slate-200'
-                    }
-                  `}>
+                  <motion.span
+                    animate={{ opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 'auto' }}
+                    className={cn(
+                      "text-sm font-medium flex-1 transition-colors relative z-10 whitespace-nowrap overflow-hidden",
+                      isActive ? "text-slate-50" : "text-slate-400 group-hover:text-slate-200"
+                    )}
+                  >
                     {item.label}
-                  </span>
+                  </motion.span>
                   
                   
                   {/* Arrow indicator */}
                   <AnimatePresence>
-                    {(isActive || hoveredItem === item.to) && (
+                    {(isActive || (!collapsed && hoveredItem === item.to)) && (
                       <motion.div
                         initial={{ opacity: 0, x: -5 }}
                         animate={{ opacity: 1, x: 0 }}
@@ -174,9 +215,6 @@ export default function Sidebar() {
         ))}
         
       </nav>
-      
-      
-      
-    </aside>
+    </motion.aside>
   );
 }

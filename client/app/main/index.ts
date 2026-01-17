@@ -15,8 +15,26 @@ function createWindow() {
   });
 
   if (isDev) {
-    // Load from Vite dev server
-    mainWindow.loadURL('http://localhost:5173');
+    // Try to load from Vite dev server on different ports
+    const tryPorts = [5173, 5174, 5175, 5176];
+    let portIndex = 0;
+    
+    const tryLoadUrl = () => {
+      const port = tryPorts[portIndex];
+      const url = `http://localhost:${port}`;
+      
+      mainWindow.loadURL(url).catch((err) => {
+        console.error(`Failed to load from port ${port}:`, err);
+        portIndex++;
+        if (portIndex < tryPorts.length) {
+          setTimeout(tryLoadUrl, 500);
+        } else {
+          console.error('Could not connect to Vite dev server on any port');
+        }
+      });
+    };
+    
+    tryLoadUrl();
     mainWindow.webContents.openDevTools();
   } else {
     // Load from built files
