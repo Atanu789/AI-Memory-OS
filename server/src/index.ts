@@ -62,7 +62,7 @@ app.use(
     store: MongoStore.create({
       mongoUrl:
         process.env.MONGODB_URI ||
-        "mongodb+srv://atanugm8_db_user:FqP8UhI7hMTQn5DJ@cluster0.ghoiydc.mongodb.net/ai-memory-os?retryWrites=true&w=majority",
+        "",
       touchAfter: 24 * 3600, // lazy session update (in seconds)
     }),
     cookie: {

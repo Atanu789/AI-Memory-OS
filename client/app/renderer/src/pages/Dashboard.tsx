@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Highlight } from '../components/ui/hero-highlight';
+// simplified header: removed hero highlight for a minimal look
 import { AppBackground } from '../components/ui/app-background';
 import { Card } from '../components/ui/card-hover-effect';
 import { motion } from 'framer-motion';
@@ -129,29 +129,17 @@ export default function Dashboard() {
       
       <div className="relative z-10 flex flex-col h-full overflow-y-auto pb-32 p-6">
         {/* Header */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center max-w-4xl mx-auto mb-12"
-        >
           <motion.div
-            animate={{ rotate: [0, 360] }}
-            transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-            className="inline-block mb-6"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-center max-w-4xl mx-auto mb-8"
           >
-            <TrendingUp className="w-20 h-20 text-blue-400 drop-shadow-[0_0_24px_rgba(59,130,246,0.6)]" />
+            <div className="flex items-center gap-3 mb-2 justify-center">
+              <TrendingUp className="w-10 h-10 text-blue-400" />
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">Welcome back, {data.user.name}</h1>
+            </div>
+            <p className="text-slate-400 text-lg text-center">{data.activitySummary || 'Your GitHub activity at a glance'}</p>
           </motion.div>
-          
-          <h1 className="text-5xl font-bold mb-4">
-            <Highlight className="text-slate-100">
-              Welcome back, {data.user.name}
-            </Highlight>
-          </h1>
-          
-          <p className="text-slate-400 text-lg">
-            {data.activitySummary || 'Your GitHub activity at a glance'}
-          </p>
-        </motion.div>
 
         {/* Today’s Focus + Productivity */}
         <motion.div 

@@ -952,10 +952,10 @@ export default function MindMap() {
           {repoTimeline && repoMap.has(activeNode.name) && (
             <div className="relative z-10 space-y-3">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-blue-400" />
-                  <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold">Activity Timeline</p>
-                </div>
+                <div className="flex items-center gap-3">
+                    <Calendar className="w-6 h-6 text-blue-400" />
+                    <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">Timeline</h3>
+                  </div>
                 <div className="flex items-center gap-2">
                   {(['week','month','all'] as const).map(p => (
                     <button

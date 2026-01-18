@@ -8,7 +8,7 @@ interface Props {
 export default function MiniTimeline({ contextSwitches }: Props) {
   return (
     <GlowingCard className="p-6" glowColor="purple">
-      <h3 className="text-sm font-medium text-slate-300 mb-4">Today's Timeline</h3>
+      <h3 className="text-sm font-medium text-slate-200 mb-2">Timeline</h3>
       
       <div className="space-y-3">
         {/* Timeline entries */}

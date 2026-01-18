@@ -123,60 +123,32 @@ export default function AskBrain() {
             >Login</button>
           </div>
         )}
-        {/* Header - Only show when no messages */}
+        {/* Header - minimalistic when no messages */}
         {messages.length === 0 && (
           <motion.div 
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            className="text-center max-w-4xl mx-auto pt-20 pb-12 px-6"
+            className="text-center max-w-4xl mx-auto pt-8 pb-6 px-4"
           >
-            <motion.div
-              animate={{ 
-                scale: [1, 1.1, 1],
-                rotate: [0, 5, -5, 0]
-              }}
-              transition={{ 
-                duration: 4, 
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-              className="inline-block mb-6"
-            >
-              <Brain className="w-20 h-20 text-purple-400 drop-shadow-[0_0_30px_rgba(192,132,252,0.6)]" />
-            </motion.div>
-            
-            <h1 className="text-6xl font-bold mb-4">
-              <Highlight className="text-slate-100">
+            <div className="flex items-center gap-3 mb-2 justify-center">
+              <Brain className="w-10 h-10 text-blue-400" />
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
                 Ask Your Brain
-              </Highlight>
-            </h1>
-            
-            <p className="text-slate-400 text-lg mb-8">
-              Query your GitHub data with natural language powered by Gemini AI
-            </p>
+              </h1>
+            </div>
+            <p className="text-slate-400 text-lg mb-4 text-center">Query your GitHub data with natural language</p>
 
-            {/* Suggestions */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="flex flex-wrap gap-2 justify-center max-w-2xl mx-auto"
-            >
+            <div className="flex flex-wrap gap-2 justify-center max-w-2xl mx-auto">
               {suggestions.map((suggestion, idx) => (
-                <motion.button
+                <button
                   key={idx}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ delay: 0.4 + idx * 0.1 }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
                   onClick={() => handleSuggestionClick(suggestion)}
-                  className="px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-slate-300 text-sm hover:border-purple-500/30 hover:bg-purple-500/10 transition-all"
+                  className="px-3 py-1 rounded bg-white/5 text-slate-300 text-sm"
                 >
                   {suggestion}
-                </motion.button>
+                </button>
               ))}
-            </motion.div>
+            </div>
           </motion.div>
         )}
 
